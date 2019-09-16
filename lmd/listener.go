@@ -112,13 +112,19 @@ func ProcessRequests(reqs []*Request, c net.Conn, remote string) (keepalive bool
 		} else {
 			// send all pending commands so far
 			if len(commandsByPeer) > 0 {
-				code, msg := SendCommands(commandsByPeer)
-				commandsByPeer = make(map[string][]string)
-				if code != 200 {
-					_, err = c.Write([]byte(fmt.Sprintf("%d: %s\n", code, msg)))
-					return
+				if remote == "@" || strings.Split(remote, ":")[0] == "127.0.0.1" {
+					code, msg := SendCommands(commandsByPeer)
+					commandsByPeer = make(map[string][]string)
+					if code != 200 {
+						_, err = c.Write([]byte(fmt.Sprintf("%d: %s\n", code, msg)))
+						return
+					}
+					log.Infof("incoming command request from %s to %s finished in %s", remote, c.LocalAddr().String(), time.Since(t1))
+				} else {
+					for site, cmd := range commandsByPeer {
+						log.Infof("denied incoming command '%s' for site %s from %s to %s", cmd, site, remote, c.LocalAddr().String())
+					}
 				}
-				log.Infof("incoming command request from %s to %s finished in %s", remote, c.LocalAddr().String(), time.Since(t1))
 			}
 			if req.WaitTrigger != "" {
 				c.SetDeadline(time.Now().Add(time.Duration(req.WaitTimeout+1000) * time.Millisecond))
@@ -153,13 +159,19 @@ func ProcessRequests(reqs []*Request, c net.Conn, remote string) (keepalive bool
 
 	// send all remaining commands
 	if len(commandsByPeer) > 0 {
-		t1 := time.Now()
-		code, msg := SendCommands(commandsByPeer)
-		if code != 200 {
-			c.Write([]byte(fmt.Sprintf("%d: %s\n", code, msg)))
-			return
+		if remote == "@" || strings.Split(remote, ":")[0] == "127.0.0.1" {
+			t1 := time.Now()
+			code, msg := SendCommands(commandsByPeer)
+			if code != 200 {
+				c.Write([]byte(fmt.Sprintf("%d: %s\n", code, msg)))
+				return
+			}
+			log.Infof("incoming command request from %s to %s finished in %s", remote, c.LocalAddr().String(), time.Since(t1))
+		} else {
+			for site, cmd := range commandsByPeer {
+				log.Infof("denied incoming command '%s' for site %s from %s to %s", cmd, site, remote, c.LocalAddr().String())
+			}
 		}
-		log.Infof("incoming command request from %s to %s finished in %s", remote, c.LocalAddr().String(), time.Since(t1))
 	}
 
 	return reqs[len(reqs)-1].KeepAlive, nil
